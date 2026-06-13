@@ -26,6 +26,7 @@ from pathlib import Path
 
 REGISTRY_API = "https://api.comfy.org/nodes/{id}/versions/{version}"
 GITHUB_ZIP = "{repo}/archive/{commit}.zip"
+BASE_CONSTRAINTS = Path("/builder-scripts/constraints.txt")  # ships in the base image
 CONSTRAINTS = Path("/tmp/torch-constraints.txt")
 RETRIES = 3
 
@@ -65,6 +66,11 @@ def extract_zip(blob, dest: Path):
 
 
 def write_constraints():
+    if BASE_CONSTRAINTS.is_file():
+        CONSTRAINTS.write_text(BASE_CONSTRAINTS.read_text())
+        log(f"torch constraints (from base image): "
+            f"{', '.join(CONSTRAINTS.read_text().split())}")
+        return
     frozen = subprocess.run(
         [sys.executable, "-m", "pip", "freeze"],
         check=True, capture_output=True, text=True,
