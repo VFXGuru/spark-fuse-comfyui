@@ -39,7 +39,17 @@ STARTUP_TIMEOUT = int(os.environ.get("STARTUP_TIMEOUT_SECONDS", "300"))
 JOB_TIMEOUT = int(os.environ.get("JOB_TIMEOUT_SECONDS", "0"))  # 0 = no limit
 POLL_INTERVAL = float(os.environ.get("POLL_INTERVAL_SECONDS", "2"))
 HEARTBEAT_EVERY = 60
-EXTRA_MODEL_PATHS = Path(__file__).resolve().parent / "extra_model_paths.yaml"
+# Where ComfyUI looks for models. Defaults to the per-job /input mount today;
+# set MODEL_BASE_DIR=/assets/models to use Spark Fuse's persistent assets mount
+# when it ships (one submit-time --env flag, no image rebuild, no workflow edits).
+MODEL_BASE_DIR = os.environ.get("MODEL_BASE_DIR", str(INPUT_DIR / "models"))
+MODEL_SUBDIRS = [
+    "checkpoints", "diffusion_models", "unet", "text_encoders", "clip",
+    "clip_vision", "vae", "loras", "controlnet", "upscale_models",
+    "embeddings", "configs",
+]
+# Generated at runtime from MODEL_BASE_DIR (see write_extra_model_paths()).
+EXTRA_MODEL_PATHS = Path("/tmp/spark_fuse_extra_model_paths.yaml")
 
 
 def log(msg):
@@ -108,6 +118,19 @@ def check_output_writable():
         probe.unlink()
     except OSError as err:
         die(2, f"{OUTPUT_DIR} is not writable: {err}")
+
+
+def write_extra_model_paths():
+    """Generate ComfyUI's extra_model_paths.yaml from MODEL_BASE_DIR.
+
+    Done at runtime, not baked into the image, so the model library location is
+    a submit-time choice: /input/models by default, or /assets/models once the
+    Spark Fuse assets mount is available, with no rebuild and no workflow edits.
+    """
+    lines = ["spark_fuse:", f"  base_path: {MODEL_BASE_DIR}"]
+    lines += [f"  {name}: {name}" for name in MODEL_SUBDIRS]
+    EXTRA_MODEL_PATHS.write_text("\n".join(lines) + "\n")
+    log(f"model search base: {MODEL_BASE_DIR}")
 
 
 def start_comfyui():
@@ -214,6 +237,7 @@ def main():
     log_banner()
     workflow = load_workflow()
     check_output_writable()
+    write_extra_model_paths()
     proc = start_comfyui()
     try:
         wait_ready(proc)

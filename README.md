@@ -46,10 +46,12 @@ Tunables (env vars): `STARTUP_TIMEOUT_SECONDS` (default 300),
 
 ## Models are not in the image
 
-Models live on ShareSync and arrive per job under `/input/models/`.
-`runner/extra_model_paths.yaml` maps that tree into ComfyUI. The test model is
-`flux1-dev-fp8.safetensors` — an all-in-one fp8 Flux checkpoint that loads with
-the standard Load Checkpoint node and fits an L4's 24GB.
+Models live on ShareSync and arrive per job under `/input/models/`. At startup the
+runner generates ComfyUI's `extra_model_paths.yaml` from the `MODEL_BASE_DIR`
+environment variable, which defaults to `/input/models`. This makes the model
+location a submit-time choice: when Spark Fuse's persistent assets mount is
+available, set `MODEL_BASE_DIR=/assets/models` and the same image reads models from
+there, with no rebuild and no workflow changes.
 
 ## Custom nodes
 
