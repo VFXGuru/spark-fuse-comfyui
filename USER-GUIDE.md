@@ -217,10 +217,27 @@ image downloads into `.\results`.
    cd <your ComfyUI folder>\custom_nodes
    git clone https://github.com/VFXGuru/spark-fuse-comfyui-node
    ```
-2. Install its dependency into the **same Python that runs your ComfyUI** (this
-   pulls the messenger client from GitHub):
+2. Install its dependency (the messenger client) into **the same Python that runs
+   your ComfyUI**. Use the option that matches your install:
+
+   **Standard install (a venv or system Python):**
    ```powershell
    pip install -r spark-fuse-comfyui-node\requirements.txt
+   ```
+
+   **Portable or desktop ComfyUI (embedded Python):** the portable build ships its
+   own Python in a `python_embeded` folder, and its isolated build step cannot
+   fetch the messenger's build backend, which fails with
+   `Cannot import 'hatchling.build'`. Install the backend first and skip isolation.
+   Open a terminal in the `python_embeded` folder and run:
+   ```powershell
+   .\python.exe -m pip install hatchling
+   .\python.exe -m pip install --no-build-isolation -r "..\ComfyUI\custom_nodes\spark-fuse-comfyui-node\requirements.txt"
+   ```
+   Adjust the path to `requirements.txt` if your folder layout differs. Confirm it
+   worked:
+   ```powershell
+   .\python.exe -c "import spark_fuse; print('spark_fuse OK')"
    ```
 3. Restart ComfyUI.
 
