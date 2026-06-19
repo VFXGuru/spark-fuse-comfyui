@@ -1,59 +1,145 @@
-# Spark Fuse ComfyUI: User Guide
+# Spark Fuse ComfyUI: Complete Setup and User Guide
 
-This guide explains how to render a ComfyUI workflow on a Spark Fuse cloud GPU. It
-assumes no prior knowledge of the project. By the end you will be able to stage
-your models once, submit a workflow, watch it run, and download the result, with
-warm runs completing in about a minute.
+This guide takes you from a bare machine to rendering ComfyUI workflows on a Spark
+Fuse cloud GPU. It assumes no prior knowledge. You stage your models once, then
+render either from the command line or with a one-click button inside ComfyUI, with
+warm runs finishing in about a minute.
 
-## What this is
+You do not need Docker. The container image runs on Spark Fuse's GPUs, not on your
+machine.
 
-This project lets you run heavy ComfyUI workflows (Flux and similar) on rented
-cloud GPUs instead of your own machine. There are four pieces:
+## Contents
 
-1. **The image** (this repository): a Docker image that runs ComfyUI headlessly,
-   published at `ghcr.io/vfxguru/spark-fuse-comfyui`. You do not build it; Spark
-   Fuse pulls it automatically.
-2. **The messenger**: a Python client and command line tool that talks to the
-   Spark Fuse API. See
-   [spark-fuse-messenger](https://github.com/VFXGuru/spark-fuse-messenger).
-3. **ShareSync**: Spark Fuse's cloud storage. Your models and workflow live here,
-   and results come back here.
-4. **The ComfyUI node** (new): an extension that submits the current workflow from
-   inside ComfyUI with a button. See
-   [spark-fuse-comfyui-node](https://github.com/VFXGuru/spark-fuse-comfyui-node).
-   This is the friendliest path and is covered briefly at the end.
+1. How it works
+2. Before you start (accounts and prerequisites)
+3. Install the Spark desktop app (ShareSync)
+4. Stage your model library (once)
+5. Choose your path
+6. Path A: render from the command line (the messenger)
+7. Path B: render from inside ComfyUI (the node)
+8. Choosing a GPU and seeing the cost
+9. Troubleshooting
+10. How it works under the hood
 
-Your local ComfyUI and the cloud ComfyUI never talk to each other directly. Your
-local ComfyUI is only the authoring canvas. Everything moves as files on ShareSync.
+## 1. How it works
 
-## How a render flows
+Heavy ComfyUI workflows (Flux and similar) run on rented cloud GPUs instead of your
+own machine. The parts are:
+
+- **The image**: a Docker image that runs ComfyUI headlessly, published at
+  `ghcr.io/vfxguru/spark-fuse-comfyui`. Spark Fuse pulls it for you; you never
+  build or run it.
+- **ShareSync**: Spark Fuse's cloud storage, where your models, workflow, and
+  results live. The Spark desktop app shows it as an ordinary folder.
+- **The messenger**: a command line tool that submits jobs (Path A).
+- **The ComfyUI node**: an extension that submits the current workflow with a
+  button (Path B).
+
+Your local ComfyUI and the cloud ComfyUI never talk directly. Your machine is the
+authoring canvas; everything moves as files on ShareSync.
 
 ```
 Your machine                                Spark Fuse cloud GPU
   author a workflow in ComfyUI
-  export it as API format  ──┐
-                             ▼
-                       small workflow.json  ──────────►  /input/
-  spark-fuse submit  ────────┘                            │
-  spark-fuse logs    ◄──── live progress                  ▼
-                       model library (staged once) ───►  /assets/  (lazy, cached)
-  spark-fuse download ◄──── result image  ◄──────────── /output/
+  send it to Spark Fuse  ─────┐
+                              ▼
+                        small workflow.json  ─────────►  /input/
+  watch live progress  ◄──── log stream                  │
+                        model library (staged once) ───►  /assets/  (lazy, cached)
+  result image  ◄──────────── download  ◄────────────── /output/
 ```
 
 The model library is staged on ShareSync once and mounted read-only and lazily at
-`/assets`. Only the bytes a render actually reads are pulled, and the library is
-cached on the compute node across jobs. Only the small `workflow.json` is sent each
-time. Combined with cached-image affinity, a warm run skips both the image pull and
-the model copy, which is why repeat renders are fast.
+`/assets`, cached on the compute node between jobs. Only the small `workflow.json`
+is sent each render. With cached-image affinity, a warm run skips both the image
+pull and the model copy, which is why repeat renders are fast.
 
-## One-time setup
+## 2. Before you start
 
-### 1. A Spark Fuse account and credentials
+### Accounts
 
-You need a Spark Fuse account with API access: a host URL, an email, and a
-password.
+- A **Spark Fuse account** with API access: a host URL, an email, and a password.
+  Sign up at [sparkcloud.studio](https://sparkcloud.studio).
 
-### 2. The messenger client
+### Prerequisites by path
+
+You only need the prerequisites for the path you choose in section 5.
+
+**Common (both paths):**
+- Windows 10/11 or macOS.
+- The Spark desktop app (section 3).
+
+**Path A, the command line, also needs:**
+- **Python 3.12 or newer**: [python.org/downloads](https://www.python.org/downloads/).
+  During install on Windows, tick "Add Python to PATH".
+- **Git**: [git-scm.com/downloads](https://git-scm.com/downloads).
+- **uv** (a fast Python tool). Install it once:
+  ```powershell
+  powershell -c "irm https://astral.sh/uv/install.ps1 | iex"
+  ```
+  (macOS or Linux: `curl -LsSf https://astral.sh/uv/install.sh | sh`.) Open a new
+  terminal afterwards so `uv` is on your PATH.
+
+**Path B, the ComfyUI node, also needs:**
+- A working **local ComfyUI** install. See
+  [ComfyUI](https://github.com/comfyanonymous/ComfyUI). Note the folder where
+  ComfyUI lives and which Python runs it.
+- **Git** (as above).
+
+## 3. Install the Spark desktop app (ShareSync)
+
+This app is how your models and workflows reach ShareSync.
+
+1. Download the Spark desktop app from
+   [sparkcloud.studio/downloads](https://sparkcloud.studio/downloads) for Windows
+   or macOS.
+2. Run the installer and launch the app.
+3. Sign in with your Spark account (the same email and password).
+4. The app mounts your ShareSync storage as a synced folder. On Windows it appears
+   in File Explorer (for example under your user folder as "Spark ShareSync"); on
+   macOS it appears in Finder. Open it and confirm you can see your space. Anything
+   you put in this folder syncs to ShareSync and becomes available to your jobs.
+
+If the folder does not appear, make sure the app is signed in and running, then
+check its settings for the sync location.
+
+## 4. Stage your model library (once)
+
+Spark Fuse reads your models from ShareSync, so you upload them once and reuse them
+on every job.
+
+1. In the Spark ShareSync folder, create a folder for your models, for example
+   `comfy-models`.
+2. Inside it, create the usual ComfyUI subfolders and copy your model files in:
+   ```
+   comfy-models/
+   ├── diffusion_models/     e.g. flux-2-klein-9b-fp8.safetensors
+   ├── text_encoders/        e.g. the text encoder your workflow loads
+   ├── vae/
+   ├── checkpoints/
+   ├── loras/
+   └── controlnet/
+   ```
+   Use only the subfolders your workflows need.
+3. Let the desktop app finish uploading. You can confirm in the ShareSync web
+   interface that the folder shows its full size. This upload runs at your
+   connection's upload speed and only happens once.
+
+The path you pass to a job is the path as it appears in ShareSync. A folder you see
+as `comfy-models` at the root of your Personal space is the path `/comfy-models/`.
+
+## 5. Choose your path
+
+- **Path A, the command line**, is best for scripting and batch work. Continue at
+  section 6.
+- **Path B, the ComfyUI node**, is the friendliest: a button inside ComfyUI.
+  Continue at section 7.
+
+Both use the same staged models and produce the same result. You can set up both.
+
+## 6. Path A: render from the command line
+
+### 6.1 Install the messenger (once)
 
 ```powershell
 git clone https://github.com/VFXGuru/spark-fuse-messenger
@@ -69,7 +155,7 @@ SPARK_EMAIL=you@yourcompany.com
 SPARK_PASSWORD=your-password
 ```
 
-Activate the environment in each new terminal and confirm it works:
+Activate the environment and confirm it works:
 
 ```powershell
 Set-ExecutionPolicy -Scope Process -ExecutionPolicy RemoteSigned
@@ -77,52 +163,89 @@ Set-ExecutionPolicy -Scope Process -ExecutionPolicy RemoteSigned
 spark-fuse login
 ```
 
-### 3. The Spark desktop app (for staging models)
+(macOS or Linux: `source .venv/bin/activate`.) You repeat the activate step in each
+new terminal.
 
-Install the Spark desktop app from
-[sparkcloud.studio/downloads](https://sparkcloud.studio/downloads). It surfaces
-your ShareSync storage as an ordinary folder in File Explorer (Windows) or Finder
-(macOS), so you can copy files into it like any local folder.
-
-### 4. Stage your model library once
-
-In your ShareSync folder, create a folder for your model library and lay it out
-with the usual ComfyUI subfolders. For example, a folder `comfy-models` containing:
-
-```
-comfy-models/
-├── diffusion_models/     e.g. flux-2-klein-9b-fp8.safetensors
-├── text_encoders/        e.g. the text encoder your workflow loads
-├── vae/
-├── checkpoints/
-├── loras/
-└── controlnet/
-```
-
-Copy your model files in and let the desktop app finish uploading. You can confirm
-in the ShareSync web interface that the folder shows its full size. This upload
-runs at your connection's upload speed and only happens once. Every later job
-references this same path with no further upload.
-
-The path you pass later is the path as it appears in ShareSync. A folder you see as
-`comfy-models` at the root of your Personal space is the path `/comfy-models/`.
-
-## Render a workflow (command line)
-
-### 1. Author and export the workflow
+### 6.2 Author and export the workflow
 
 Build your workflow in ComfyUI with a Save Image node at the end. Export it in
-**API format** (the workflow menu's **Export (API)** option, not an ordinary
-save). Save the file as `workflow.json`. The API format is required because Spark
-Fuse submits to ComfyUI's programmatic endpoint; an ordinary save is rejected.
+**API format** (the workflow menu's **Export (API)** option, not an ordinary save).
+Save the file as `workflow.json`. The API format is required; an ordinary save is
+rejected.
 
-### 2. Stage the workflow
+### 6.3 Stage the workflow
 
-Create a small folder in ShareSync, for example `klein-job`, and copy only
-`workflow.json` into it. This is the per-render input. The models do not go here;
-they are served from `/assets`.
+In the Spark ShareSync folder, create a small folder, for example `my-job`, and
+copy only `workflow.json` into it. The models do not go here; they are served from
+`/assets`. Wait for it to sync.
 
-### 3. Choose a GPU and check the cost
+### 6.4 Submit
+
+```powershell
+spark-fuse submit --image ghcr.io/vfxguru/spark-fuse-comfyui:latest --command python3.13 --command /runner/spark_fuse_run.py --instance-type g6.xlarge --input-path "/my-job/" --assets-path "/comfy-models/" --env MODEL_BASE_DIR=/assets --image-affinity required
+```
+
+- `--input-path` is the small workflow folder; `--assets-path` is your model
+  library; `MODEL_BASE_DIR=/assets` tells ComfyUI to read models from the assets
+  mount.
+- It prints a job ID. If you get an immediate HTTP 400 about the input path, the
+  folder has not finished syncing yet; confirm it in the web interface and
+  resubmit. No GPU is billed in that case.
+- Tip: for the most reliable warm-start affinity, pin the image by digest
+  (`...@sha256:<digest>`) instead of `:latest`.
+
+### 6.5 Watch and download
+
+```powershell
+spark-fuse logs <job-id>
+spark-fuse download <job-id> .\results
+```
+
+Connect to the logs straight away (there is no replay). When the job succeeds, the
+image downloads into `.\results`.
+
+## 7. Path B: render from inside ComfyUI (the node)
+
+> The node is newly released. The install and configuration below are stable; if a
+> button or panel does not appear, see the troubleshooting note at the end of this
+> section.
+
+### 7.1 Install the node (once)
+
+1. Clone it into your ComfyUI `custom_nodes` folder:
+   ```powershell
+   cd <your ComfyUI folder>\custom_nodes
+   git clone https://github.com/VFXGuru/spark-fuse-comfyui-node
+   ```
+2. Install its dependency into the **same Python that runs your ComfyUI** (this
+   pulls the messenger client from GitHub):
+   ```powershell
+   pip install -r spark-fuse-comfyui-node\requirements.txt
+   ```
+3. Restart ComfyUI.
+
+### 7.2 Configure
+
+1. Click the **⚡ Spark Fuse** button (top right of the ComfyUI window).
+2. Open **Credentials** and enter your host, email, and password. (Alternatively
+   set `SPARK_HOST`, `SPARK_EMAIL`, and `SPARK_PASSWORD` in the environment.)
+3. Set the **Assets ShareSync path** to your model library, for example
+   `/comfy-models/`.
+4. Pick a **GPU**; the hourly rate appears beside it.
+5. Click **Save settings**.
+
+### 7.3 Render
+
+1. Build or open a workflow with a Save Image node at the end.
+2. Click **⚡ Spark Fuse**, then **Render on Spark Fuse**.
+3. Watch progress in the panel. The finished image appears there and is also saved
+   in ComfyUI's output folder.
+
+If the button does not appear after restarting, open your browser's developer
+console and the ComfyUI log and check for errors, and confirm the dependency
+installed into the same Python as ComfyUI.
+
+## 8. Choosing a GPU and seeing the cost
 
 ```powershell
 spark-fuse skus
@@ -132,52 +255,10 @@ spark-fuse estimate g6.xlarge
 `skus` lists every GPU type with its memory. `estimate` shows the hourly rate. Pick
 the smallest GPU that fits your models to keep cost down, or a larger one for the
 fastest single render. As a guide, a model set of around 17 GB runs comfortably on
-any 24 GB card.
+any 24 GB card. The rate is per hour; your actual cost depends on how long the job
+runs, including the one-time cold start.
 
-### 4. Submit
-
-Point `--input-path` at the small workflow folder and `--assets-path` at your model
-library, and pass `MODEL_BASE_DIR=/assets` so ComfyUI reads models from the assets
-mount. Pin the image by digest and ask for cached-image affinity:
-
-```powershell
-spark-fuse submit --image ghcr.io/vfxguru/spark-fuse-comfyui@sha256:<digest> --command python3.13 --command /runner/spark_fuse_run.py --instance-type g6.xlarge --input-path "/klein-job/" --assets-path "/comfy-models/" --env MODEL_BASE_DIR=/assets --image-affinity required
-```
-
-It prints a job ID. If you get an immediate HTTP 400 about the input path, the
-folder has not finished syncing to ShareSync yet; confirm it in the web interface,
-then resubmit. No GPU is billed in that case.
-
-### 5. Watch the logs and download
-
-```powershell
-spark-fuse logs <job-id>
-spark-fuse download <job-id> .\results
-```
-
-Connect to the logs straight away (there is no replay). When the job succeeds, the
-result image is downloaded into `.\results`.
-
-### What to expect on cold and warm runs
-
-The first run on a freshly published image is a cold start: the image is pulled and
-the model bytes are read for the first time. Once a node has run your job, it caches
-both the image and the assets. With `--image-affinity required`, later runs are
-steered onto that warm node, skip the image pull, read models from local disk, and
-finish in roughly a minute. You can see whether a run hit the cache with
-`spark-fuse status <job-id>`, which now reports the image cache result.
-
-## Render a workflow (ComfyUI node)
-
-For a one-click experience from inside ComfyUI, install the
-[spark-fuse-comfyui-node](https://github.com/VFXGuru/spark-fuse-comfyui-node)
-extension. It adds a button that ships the current workflow to Spark Fuse, shows
-live progress, and loads the finished image back into ComfyUI, using the same
-assets mount and affinity settings described above. Installation and configuration
-are covered in that repository's README. This node is new; this section will be
-expanded here once it has been through field testing.
-
-## Troubleshooting
+## 9. Troubleshooting
 
 The runner reports a clear exit code, shown in the job summary:
 
@@ -202,9 +283,21 @@ Other common situations:
 - **The workflow is rejected as the wrong format.** Re-export it using
   **Export (API)**, not an ordinary save.
 - **A model is not found.** Check that the file sits under the correct subfolder of
-  your assets library and that the name in the workflow matches exactly.
+  your library and that the name in the workflow matches exactly.
 - **The first run is slow.** That is the expected cold start. Run it again and, with
   image affinity, the warm run is much faster.
+
+## 10. How it works under the hood
+
+- **Models load lazily and stay cached.** Your library is mounted read-only at
+  `/assets`. Only the bytes a render reads are pulled, and they are cached on the
+  compute node for the next job. Nothing is re-uploaded from your machine.
+- **Image affinity** steers repeat runs onto a node that already cached the image,
+  so the multi-gigabyte image pull is skipped. The first run on a freshly published
+  image is a cold start; later runs are warm. `spark-fuse status <job-id>` reports
+  whether a run hit the cache.
+- **One workflow per job.** The whole graph runs in the cloud; your machine only
+  authors it and collects the result.
 
 ## License
 
