@@ -21,6 +21,7 @@ Exit codes:
 """
 import json
 import os
+import random
 import re
 import subprocess
 import sys
@@ -39,6 +40,14 @@ STARTUP_TIMEOUT = int(os.environ.get("STARTUP_TIMEOUT_SECONDS", "300"))
 JOB_TIMEOUT = int(os.environ.get("JOB_TIMEOUT_SECONDS", "0"))  # 0 = no limit
 POLL_INTERVAL = float(os.environ.get("POLL_INTERVAL_SECONDS", "2"))
 HEARTBEAT_EVERY = 60
+# Render this many images in one job (one cold start + one model load amortised
+# across all of them). Set per job via the BATCH_COUNT env var; clamped to 1..100.
+try:
+    BATCH_COUNT = max(1, min(int(os.environ.get("BATCH_COUNT", "1")), 100))
+except ValueError:
+    BATCH_COUNT = 1
+# Inputs whose value is randomised between batch renders so each image differs.
+SEED_KEYS = ("seed", "noise_seed")
 # Where ComfyUI looks for models. Defaults to the per-job /input mount today;
 # set MODEL_BASE_DIR=/assets/models to use Spark Fuse's persistent assets mount
 # when it ships (one submit-time --env flag, no image rebuild, no workflow edits).
@@ -233,6 +242,23 @@ def shutdown(proc):
         proc.kill()
 
 
+def randomize_seeds(workflow):
+    """Give each batch render a fresh seed so the images differ. ComfyUI caches
+    node outputs, so an identical re-submit would return the same image; changing
+    the seed re-runs only sampling onward, reusing the already-loaded model."""
+    changed = 0
+    for node in workflow.values():
+        inputs = node.get("inputs") if isinstance(node, dict) else None
+        if not isinstance(inputs, dict):
+            continue
+        for key in inputs:
+            value = inputs[key]
+            if key in SEED_KEYS and isinstance(value, int) and not isinstance(value, bool):
+                inputs[key] = random.randint(0, 2**32 - 1)
+                changed += 1
+    return changed
+
+
 def main():
     log_banner()
     workflow = load_workflow()
@@ -241,8 +267,16 @@ def main():
     proc = start_comfyui()
     try:
         wait_ready(proc)
-        prompt_id = submit(workflow)
-        wait_done(proc, prompt_id)
+        if BATCH_COUNT > 1:
+            log(f"batch render: {BATCH_COUNT} images in one job (model loads once)")
+        for i in range(BATCH_COUNT):
+            if i > 0:
+                n = randomize_seeds(workflow)
+                log(f"render {i + 1}/{BATCH_COUNT} (randomised {n} seed input(s))")
+            elif BATCH_COUNT > 1:
+                log(f"render 1/{BATCH_COUNT}")
+            prompt_id = submit(workflow)
+            wait_done(proc, prompt_id)
         files = report_outputs()
         log(f"job complete: {len(files)} file(s) in {OUTPUT_DIR}")
     finally:
