@@ -106,7 +106,12 @@ check its settings for the sync location.
 ## 4. Stage your model library (once)
 
 Spark Fuse reads your models from ShareSync, so you upload them once and reuse them
-on every job.
+on every job. Lay the library out to **mirror your local ComfyUI `models` folder**,
+including any subfolders (for example `diffusion_models/FLUX2/...`). A workflow
+refers to a model by its path, so if a model sits in a subfolder locally it must sit
+in the same subfolder here, or the cloud will not find it. Windows path separators
+are handled for you: the ComfyUI node converts a Windows `\` to the Linux `/`
+automatically.
 
 1. In the Spark ShareSync folder, create a folder for your models, for example
    `comfy-models`.
@@ -206,10 +211,6 @@ image downloads into `.\results`.
 
 ## 7. Path B: render from inside ComfyUI (the node)
 
-> The node is newly released. The install and configuration below are stable; if a
-> button or panel does not appear, see the troubleshooting note at the end of this
-> section.
-
 ### 7.1 Install the node (once)
 
 1. Clone it into your ComfyUI `custom_nodes` folder:
@@ -254,9 +255,12 @@ image downloads into `.\results`.
 ### 7.3 Render
 
 1. Build or open a workflow with a Save Image node at the end.
-2. Click **⚡ Spark Fuse**, then **Render on Spark Fuse**.
-3. Watch progress in the panel. The finished image appears there and is also saved
-   in ComfyUI's output folder.
+2. Click **⚡ Spark Fuse**, then **Render on Spark Fuse**. (The button stays greyed
+   until the GPU list has loaded.)
+3. Watch progress in the panel, and leave ComfyUI running until the image returns.
+   When the job finishes, the image appears in the panel and is saved into ComfyUI's
+   output folder under the next sequential name, so repeated renders accumulate
+   rather than overwrite.
 
 If the button does not appear after restarting, open your browser's developer
 console and the ComfyUI log and check for errors, and confirm the dependency
