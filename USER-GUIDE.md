@@ -250,7 +250,9 @@ image downloads into `.\results`.
 3. Set the **Assets ShareSync path** to your model library, for example
    `/comfy-models/`.
 4. Pick a **GPU**; the hourly rate appears beside it.
-5. Click **Save settings**.
+5. Optionally set a **Batch count** to render several images from one job (see
+   section 7.4).
+6. Click **Save settings**.
 
 ### 7.3 Render
 
@@ -265,6 +267,19 @@ image downloads into `.\results`.
 If the button does not appear after restarting, open your browser's developer
 console and the ComfyUI log and check for errors, and confirm the dependency
 installed into the same Python as ComfyUI.
+
+### 7.4 Batch render: several images from one job
+
+Set **Batch count** to render more than one image from a single job. The job pays
+the cold start and loads the model once, then renders that many images in sequence,
+giving each a fresh seed so they differ. Because the renders run one after another
+rather than as a single large batch, memory use stays at one image's worth, so a
+batch does not need a larger GPU. Every image after the first costs only its
+sampling time, not another cold start: in one test on a 24 GB card the first image
+took about seven minutes including the cold start and model load, while each further
+image took under two minutes. All the images are saved into ComfyUI's output folder
+under sequential names, so they accumulate rather than overwrite. The count may be
+from 1 to 100.
 
 ## 8. Choosing a GPU and seeing the cost
 
