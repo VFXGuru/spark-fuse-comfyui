@@ -281,6 +281,29 @@ image took under two minutes. All the images are saved into ComfyUI's output fol
 under sequential names, so they accumulate rather than overwrite. The count may be
 from 1 to 100.
 
+### 7.5 Render queue: several workflows back to back
+
+The queue runs several different workflows one after another on a single warm
+instance. Spark Fuse pre-warms one instance, every queued job runs on it with no
+cold start or image pull in between, and the instance is released when the queue
+finishes.
+
+1. Open a workflow, set its **Batch count**, then click **Add to queue**. Repeat for
+   each workflow: open the next one, set its batch count, and add it. Each item
+   captures the graph as it is at the moment you add it.
+2. Click **Run queue**. The panel prepares the instance, then runs each item in turn,
+   downloading its images as it completes and showing live progress with a
+   per-workflow status (queued, running, succeeded, or failed).
+3. **Cancel queue** stops after the current job and releases the instance.
+
+All queued workflows draw their models from the one shared library mounted at
+`/assets`, so make sure every model that any of them use is synced into that single
+ShareSync folder, mirroring your local folder structure (see section 5). The prepared
+instance is billed for the whole session, including the short gaps between jobs, so a
+queue is most economical when the jobs run back to back. Batching within a single
+workflow still amortises the model load best; the queue's gain is removing
+provisioning and the image pull between different workflows.
+
 ## 8. Choosing a GPU and seeing the cost
 
 ```powershell
